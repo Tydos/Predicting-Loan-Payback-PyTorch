@@ -1,0 +1,23 @@
+artifact_path: file:///D:/GitHub/LoanPayback/mlruns/1/models/m-2b6c2af9cb114f39a1150155b54047ce/artifacts
+flavors:
+  python_function:
+    config:
+      device: null
+    data: data
+    env:
+      conda: conda.yaml
+      virtualenv: python_env.yaml
+    loader_module: mlflow.pytorch
+    pickle_module_name: mlflow.pytorch.pickle_module
+    python_version: 3.11.1
+  pytorch:
+    code: null
+    model_data: data
+    pytorch_version: 2.9.1+cpu
+mlflow_version: 3.8.0
+model_id: m-2b6c2af9cb114f39a1150155b54047ce
+model_size_bytes: 30209
+model_uuid: m-2b6c2af9cb114f39a1150155b54047ce
+prompts: null
+run_id: 2b3458a85fd84711ac8adc83455baaa2
+utc_time_created: '2025-12-25 14:49:12.589252'

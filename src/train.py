@@ -1,20 +1,18 @@
-import mlflow
-from tqdm import tqdm
 import torch
-import matplotlib.pyplot as plt
+from tqdm import tqdm
 
-# --- Set experiment ---
-mlflow.set_experiment("LoanPayback_Experiment")
+def train_model(
+    model,
+    trainerloader,
+    valloader,
+    testloader,
+    optimizer,
+    criterion,
+    EPOCH,
+    device,
+    mlflow
+):
 
-# Start MLflow run
-with mlflow.start_run():
-
-    # Log hyperparameters (example, adjust to your config)
-    mlflow.log_param("learning_rate", LEARNING_RATE)
-    mlflow.log_param("batch_size", BATCH_SIZE)
-    mlflow.log_param("epochs", EPOCH)
-    mlflow.log_param("weight_decay", WEIGHT_DECAY)
-    mlflow.log_param("model_input_dim", MODEL_INPUT_DIM)
 
     loss_history = []
     val_loss_history = []
@@ -73,23 +71,8 @@ with mlflow.start_run():
         mlflow.log_metric("test_loss", avg_test_loss, step=epoch)
 
         print(f"Epoch {epoch+1}: Train Loss={avg_train_loss:.4f}, "
-              f"Val Loss={avg_val_loss:.4f}, Test Loss={avg_test_loss:.4f}")
+            f"Val Loss={avg_val_loss:.4f}, Test Loss={avg_test_loss:.4f}")
 
         model.train()  # Back to train mode
 
-    # --- Plot loss curves ---
-    epochs_range = range(1, len(loss_history) + 1)
-    plt.figure(figsize=(8,5))
-    plt.plot(epochs_range, loss_history, label='Train Loss')
-    plt.plot(epochs_range, val_loss_history, label='Validation Loss')
-    plt.plot(epochs_range, test_loss_history, label='Test Loss')
-    plt.xlabel('Epoch')
-    plt.ylabel('Loss')
-    plt.title('Training, Validation, and Test Loss')
-    plt.legend()
-    plt.grid(True)
-    plt.show()
-
-    # --- Optional: log artifacts ---
-    plt.savefig("loss_curves.png")
-    mlflow.log_artifact("loss_curves.png")
+    return model, loss_history, val_loss_history, test_loss_history
