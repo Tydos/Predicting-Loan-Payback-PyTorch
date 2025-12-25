@@ -41,8 +41,5 @@ jobs:
           docker pull ${{ secrets.ECR_REGISTRY }}/${{ secrets.ECR_REPOSITORY }}:latest
           docker stop loanpayback || true
           docker rm loanpayback || true
-          docker run -d \
-            --restart always \
-            -p 80:8000 \
-            --name loanpayback \
-            ${{ secrets.ECR_REGISTRY }}/${{ secrets.ECR_REPOSITORY }}:latest
+          docker run -d -p 80:8000 --name loanpayback ${{ secrets.ECR_REGISTRY }}/${{ secrets.ECR_REPOSITORY }}:latest
+            
