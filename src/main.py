@@ -1,24 +1,22 @@
 from src.split_data import split_dataset
 from src.process_data import process_data
-import pandas as pd
 from torch.utils.data import Dataset, DataLoader
 from src.loan_dataset import loan_dataset
-import yaml
 from src.model import loan_predictor
 from torch.optim import Adam
-from torch.optim import SGD
 import torch.nn as nn
 import torch
 from src.config_loader import load_config
 from src.test_model import dummy_test
 from src.read_data import read_data
 from src.train import train_model
+from src.mlflow_registry import register_and_promote
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 print("reading data and configs")
-df = read_data()
 config = load_config()
 config1 = config.pytorch
+df = read_data(config.data_split.data_length)
 
 print("splitting data")
 trainset, valset, testset = split_dataset(df, config)
@@ -86,33 +84,10 @@ with mlflow.start_run() as run:
     plt.savefig("loss_curves.png")
     mlflow.log_artifact("loss_curves.png")
 
-    #Log the model execution 
-    mlflow.pytorch.log_model(model, artifact_path="models")
-
-    # Register the model in Model Registry (creates a new version automatically)
-    MODEL_NAME = "LoanPayback"
-    result = mlflow.register_model(
-    f"runs:/{run_id}/models",MODEL_NAME
+    version = register_and_promote(
+        model=model,
+        test=dummy_test,
+        run_id=run_id   # pass run_id
     )
-    print(f"Registered {MODEL_NAME} version {result.version}")
 
 
-
-# Load the latest registered version for testing
-client = mlflow.tracking.MlflowClient()
-latest_versions = client.get_latest_versions(MODEL_NAME, stages=[])
-latest_version_number = max(int(v.version) for v in latest_versions)
-print(f"Latest version for testing: {latest_version_number}")
-model_for_test = mlflow.pytorch.load_model(f"models:/{MODEL_NAME}/{latest_version_number}")
-
-# Run dummy test
-if dummy_test(model_for_test):
-    print("Dummy test passed! Promoting to Production...")
-    client.transition_model_version_stage(
-        name=MODEL_NAME,
-        version=latest_version_number,
-        stage="Production"
-    )
-    print(f"Model version {latest_version_number} is now in Production.")
-else:
-    print("Dummy test failed. Model not promoted.")

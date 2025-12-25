@@ -18,9 +18,9 @@ def split_dataset(dataset,config):
         )
     
     print(len(dataset))
-    print(len(trainset))
-    print(len(valset))
-    print(len(testset))
+    # print(len(trainset))
+    # print(len(valset))
+    # print(len(testset))
     
     return trainset, valset, testset
 

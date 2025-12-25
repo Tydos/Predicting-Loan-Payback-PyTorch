@@ -1,5 +1,7 @@
 #data-split configuration
 data_split:
+
+  data_length: 10000
   target_column: loan_paid_back
 
   test_size_1: 0.3 #70:30 train test split
