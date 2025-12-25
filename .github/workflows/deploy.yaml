@@ -39,9 +39,14 @@ jobs:
         key: ${{ secrets.EC2_SSH_KEY }}
         port: 22  
         script: |
-          docker image prune -f
-          docker pull ${{ secrets.ECR_REGISTRY }}/${{ secrets.ECR_REPOSITORY }}:latest
+          
           docker stop loanpayback || true
-          docker rm loanpayback || true
+          docker rm -f loanpayback || true
+
+          docker image prune -a -f
+          docker builder prune -f
+          
+          docker pull ${{ secrets.ECR_REGISTRY }}/${{ secrets.ECR_REPOSITORY }}:latest
+          
           docker run -d -p 80:8000 --name loanpayback ${{ secrets.ECR_REGISTRY }}/${{ secrets.ECR_REPOSITORY }}:latest
             
