@@ -19,3 +19,4 @@ EXPOSE 8000
 
 # Command to run FastAPI with Uvicorn
 CMD ["uvicorn", "api.main:app", "--host", "0.0.0.0", "--port", "8000"]
+
