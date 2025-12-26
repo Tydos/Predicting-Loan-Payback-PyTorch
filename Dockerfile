@@ -8,8 +8,8 @@ WORKDIR /app
 COPY requirements.txt .
 
 # Install dependencies
-RUN python -m pip install --upgrade pip
-RUN pip install --no-cache-dir -r requirements.txt
+RUN pip install --upgrade pip && \
+    pip install --no-cache-dir -r requirements.txt
 
 # Copy code
 COPY . .

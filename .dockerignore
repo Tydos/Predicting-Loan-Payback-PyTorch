@@ -1,0 +1,42 @@
+# Git
+.git
+.gitignore
+
+# Python / Environment
+__pycache__/
+*.py[cod]
+*$py.class
+.env
+.venv
+env/
+venv/
+pip-log.txt
+pip-delete-this-directory.txt
+
+# PyTorch / Machine Learning
+# Exclude datasets and local model weights (usually huge)
+data/
+datasets/
+models/*.pth
+models/*.onnx
+*.weights
+.ipynb_checkpoints/
+
+# MLflow
+# Exclude local MLflow run data
+mlruns/
+mlruns.db
+outputs/
+
+# Logs and Debugging
+*.log
+logs/
+.pytest_cache/
+.coverage
+htmlcov/
+.vscode/
+.idea/
+
+# OS Specific
+.DS_Store
+Thumbs.db
