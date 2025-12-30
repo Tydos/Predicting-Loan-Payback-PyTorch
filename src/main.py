@@ -49,6 +49,7 @@ optimizer = Adam(model.parameters(), lr=LEARNING_RATE,  weight_decay=WEIGHT_DECA
 print("model train")
 import mlflow
 import matplotlib.pyplot as plt
+mlflow.set_tracking_uri("http://localhost:5000")
 mlflow.set_experiment("LoanPayback_Experiment")
 mlflow.pytorch.autolog()
 
