@@ -1,20 +1,15 @@
 import psycopg2
 from psycopg2.extensions import ISOLATION_LEVEL_AUTOCOMMIT
+import dotenv
+import os
 
-# Aurora/PostgreSQL connection parameters
-HOST = "loan-prediction-metadata.c4jskc8imd2i.us-east-1.rds.amazonaws.com"
-USER = "postgresql"            # your DB username
-PASSWORD = "Prasadj38!"  # DB password
-PORT = 5432                # default PostgreSQL port
 DB_NAME = "mlflow"         # the new database to create
-
-# Connect to the default database 'postgres'
+dotenv.load_dotenv()
 conn = psycopg2.connect(
-    host=HOST,
-    database="postgres",  # must connect to an existing DB first
-    user=USER,
-    password=PASSWORD,
-    port=PORT
+    host=os.getenv("HOST"),
+    database=os.getenv("DATABASE"),
+    user=os.getenv("USER"),
+    password=os.getenv("PASSWORD")
 )
 
 # Set autocommit to True to allow CREATE DATABASE

@@ -1,26 +1,20 @@
 from sklearn.model_selection import train_test_split
 
-def split_dataset(dataset,config):
-    config = config.data_split
-    target = config.target_column
+def split_dataset(dataset,target,test_size1,test_size2,is_stratify,random_state):
     trainset, tempset = train_test_split(
         dataset,
-        test_size=config.test_size_1, 
-        stratify=dataset[target] if config.stratify else None, # Stratify default is active
-        random_state=config.random_state
+        test_size=test_size1,
+        stratify=dataset[target] if is_stratify else None, # Stratify default is active
+        random_state=random_state
         )
     
     valset, testset = train_test_split(
         tempset,
-        test_size=config.test_size_2,
-        stratify=tempset[target] if config.stratify else None,
-        random_state=config.random_state
+        test_size=test_size2,
+        stratify=tempset[target] if is_stratify else None,
+        random_state=random_state
         )
     
-    print(len(dataset))
-    # print(len(trainset))
-    # print(len(valset))
-    # print(len(testset))
-    
+    print(len(dataset), len(trainset), len(valset), len(testset))
     return trainset, valset, testset
 

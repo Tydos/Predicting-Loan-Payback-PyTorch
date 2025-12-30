@@ -1,2 +1,4 @@
 loanpayback/
 __pycache__/
+env
+.env

@@ -19,7 +19,13 @@ config1 = config.pytorch
 df = read_data(config.data_split.data_length)
 
 print("splitting data")
-trainset, valset, testset = split_dataset(df, config)
+config = config.data_split
+target = config.target_column
+test_size1=config.test_size_1
+test_size2=config.test_size_2
+random_state=config.random_state
+is_stratify=config.stratify
+trainset, valset, testset = split_dataset(df, target,test_size1,test_size2,is_stratify, random_state)
 
 print("running data processing")
 trainset,scaler,encoders = process_data(trainset,train=True)
@@ -63,7 +69,7 @@ with mlflow.start_run() as run:
         testloader,
         optimizer,
         criterion,
-        config.pytorch.epoch,
+        EPOCH,
         device,
         mlflow
     )

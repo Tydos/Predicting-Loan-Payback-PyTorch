@@ -1,7 +1,7 @@
 #data-split configuration
 data_split:
 
-  data_length: 10000
+  data_length: 100000
   target_column: loan_paid_back
 
   test_size_1: 0.3 #70:30 train test split
@@ -11,8 +11,8 @@ data_split:
   random_state: 11
 
 pytorch:
-  batch_size: 32
-  epoch: 10
+  batch_size: 64
+  epoch: 15
   learning_rate: 0.0001
   weight_decay: 0.00001
   model_input_dim: 11

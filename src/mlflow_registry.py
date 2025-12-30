@@ -1,5 +1,7 @@
 import mlflow
+mlflow.set_experiment("LoanPayback_Experiment")
 def register_and_promote(model,run_id,test):
+    mlflow.set_tracking_uri("http://localhost:5000")
     
     #Log the model execution 
     mlflow.pytorch.log_model(model, artifact_path="models")
