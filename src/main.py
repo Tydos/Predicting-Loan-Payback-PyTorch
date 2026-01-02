@@ -55,7 +55,7 @@ optimizer = Adam(model.parameters(), lr=LEARNING_RATE,  weight_decay=WEIGHT_DECA
 print("model train")
 import mlflow
 import matplotlib.pyplot as plt
-mlflow.set_tracking_uri("http://localhost:5000")
+mlflow.set_tracking_uri("http://54.236.35.141:5000/")
 mlflow.set_experiment("LoanPayback_Experiment")
 mlflow.pytorch.autolog()
 
@@ -93,7 +93,7 @@ with mlflow.start_run() as run:
 
     version = register_and_promote(
         model=model,
-        test=dummy_test,
+        test_fn=dummy_test,
         run_id=run_id   # pass run_id
     )
 
