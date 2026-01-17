@@ -15,6 +15,10 @@
 # Base image
 FROM python:3.11-slim
 
+# Prevent Python from writing pyc files and buffer logs
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV PYTHONUNBUFFERED=1
+
 # Set workdir
 WORKDIR /app
 
@@ -22,11 +26,13 @@ WORKDIR /app
 COPY api/requirements.txt .
 
 # Install dependencies
-RUN pip install --upgrade pip && \
+RUN pip install --no-cache-dir --upgrade pip && \
+    pip install --no-cache-dir torch --index-url https://download.pytorch.org/whl/cpu && \
     pip install --no-cache-dir -r requirements.txt
 
 # Copy code
-COPY . .
+COPY api/ api/
+COPY src/ src/
 
 # Expose port
 EXPOSE 8000
