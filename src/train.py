@@ -13,7 +13,6 @@ def train_model(
     mlflow
 ):
 
-
     loss_history = []
     val_loss_history = []
     test_loss_history = []

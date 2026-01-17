@@ -2,3 +2,4 @@ loanpayback/
 __pycache__/
 env
 .env
+mlruns/
