@@ -1,9 +1,6 @@
 ## Credit Risk Scorer
 
-Credit Risk Scorer is a containerized MLOps pipeline that trains a PyTorch neural network on ~594,000 historical loan records (sourced from kaggle) to predict whether a borrower will repay or default. Training runs are tracked remotely on DagsHub's hosted MLflow, which handles
-experiment logging, artifact storage (scaler, encoders, loss curves), model registration, and the champion alias that gates production promotion. The inference service is a FastAPI app that loads the champion model at startup, serves a built-in UI for manual loan
-application scoring, and exposes endpoints for prediction, model validation results, and health checking — all packaged as Docker images orchestrated via Docker Compose.
-
+Credit Risk Scorer is a containerized MLOps pipeline that trains a PyTorch neural network on ~594,000 historical loan records (sourced from Kaggle) to predict whether a borrower will repay or default. Training runs are tracked remotely on DagsHub's hosted MLflow, which handles experiment logging, artifact storage (scaler, encoders, loss curves), model registration, and the champion alias that gates production promotion. The inference service is a FastAPI app that loads the champion model at startup, serves a built-in UI for manual loan application scoring, and exposes endpoints for prediction, model validation results, and health checking — all packaged as Docker images orchestrated via Docker Compose.
 
 ## What it does
 
@@ -13,7 +10,40 @@ application scoring, and exposes endpoints for prediction, model validation resu
 
 ---
 
+## Project Structure
 
+```
+Credit-Risk-Scorer/
+├── core/                        # Shared library used by both services
+│   ├── config.py                # Pydantic config models + loader
+│   ├── config.yaml              # Single source of truth for all settings
+│   ├── architecture.py          # LoanPredictor nn.Module definition
+│   ├── preprocessing.py         # Scaler/encoder fit+transform utilities
+│   └── schema.py                # LoanApplicationPayload (API request schema)
+│
+├── pipeline/                    # Data pipeline, in order
+│   ├── etl.py                   # Step 1: raw CSV → dataset/train.csv
+│   └── prepare.py               # Step 2: train.csv → train/val/test splits
+│
+├── services/
+│   ├── train/
+│   │   ├── baselines.py         # Runnable: majority-class + logistic regression
+│   │   ├── trainer.py           # PyTorch training loop (imported by train.py)
+│   │   └── train.py             # Runnable: PyTorch training + model promotion
+│   └── inference/
+│       └── app.py               # FastAPI inference service
+│
+├── tests/
+│   └── load_test.py             # Locust load test for the inference API
+│
+├── notebooks/                   # Exploratory analysis scripts
+│   ├── feature_analysis.py
+│   └── profile_dataset.py
+│
+└── dataset/                     # DVC-managed data files
+```
+
+---
 
 ## Dataset
 
@@ -21,17 +51,15 @@ The raw data is the **LendingClub Loan Data** publicly available on Kaggle:
 
 > [LendingClub Accepted & Rejected Loans 2007–2018 Q4](https://www.kaggle.com/datasets/wordsforthewise/lending-club)
 
-Download both files and place them in `dataset/`:
-
-
-Once downloaded, run the ETL to produce the cleaned training file:
+Download both files and place them in `dataset/`, then run the ETL to produce the cleaned training file:
 
 ```bash
-python -m src.lending_club_etl
-python -m src.scripts.feature_analysis
+PYTHONPATH=. python pipeline/etl.py
 ```
 
-## Data Versioning and Control
+---
+
+## Data Versioning
 
 ```bash
 dvc pull          # download data
@@ -39,11 +67,67 @@ dvc repro         # re-run ETL if config changed
 dvc push          # upload new data to remote
 ```
 
-## How to run
+---
+
+## How to Run
+
+Set your DagsHub token before running anything:
 
 ```bash
-python services/train/train.py
-uvicorn services.inference.main:app --reload
+export DAGSHUB_USER_TOKEN=<your_token>
+```
+
+### With Docker (recommended)
+
+```bash
+# Train (logs to DagsHub MLflow)
+docker compose run --rm train
+
+# Serve the production model
+docker compose up inference
+```
+
+### Without Docker
+
+**Step 1 — ETL** (only needed when regenerating `dataset/train.csv`):
+
+```bash
+PYTHONPATH=. python pipeline/etl.py
+```
+
+**Step 2 — Baselines** (majority-class + logistic regression, logged to MLflow):
+
+```bash
+PYTHONPATH=. python services/train/baselines.py
+```
+
+**Step 3 — PyTorch training** (trains the neural network, registers + promotes the model):
+
+```bash
+PYTHONPATH=. python services/train/train.py
+```
+
+**Step 4 — Inference API**:
+
+```bash
+PYTHONPATH=. uvicorn services.inference.app:app --reload
+```
+
+Then open [http://localhost:8000](http://localhost:8000) for the built-in scoring UI.
+
+---
+
+## Exploratory Analysis
+
+```bash
+PYTHONPATH=. python notebooks/feature_analysis.py
+PYTHONPATH=. python notebooks/profile_dataset.py   # generates docs/train_profile.html
 ```
 
 ---
+
+## Load Testing
+
+```bash
+locust -f tests/load_test.py --host http://localhost:8000
+```

@@ -1,7 +1,16 @@
+"""
+Step 1 of the pipeline: raw LendingClub CSV → cleaned dataset/train.csv
+
+Run:
+    python pipeline/etl.py
+"""
+
 import logging
 from pathlib import Path
+
 import pandas as pd
-from src.config import RawDatasetConfig, load_config
+
+from core.config import RawDatasetConfig, load_config
 
 logging.basicConfig(level=logging.INFO)
 
@@ -30,16 +39,8 @@ RENAME_MAP = {
     "purpose": "loan_purpose",
 }
 
+
 def read_chunks(config: RawDatasetConfig) -> pd.DataFrame:
-    """
-    Read selected columns from the raw LendingClub CSV.
-
-    Args:
-        config: RawDatasetConfig with raw_path and optional data_length.
-
-    Returns:
-        DataFrame with RAW_FEATURE_COLUMNS only.
-    """
     df = pd.read_csv(
         config.raw_path,
         nrows=config.data_length,
@@ -52,13 +53,6 @@ def read_chunks(config: RawDatasetConfig) -> pd.DataFrame:
 
 def drop_columns(df: pd.DataFrame, cols_to_drop: list[str]) -> pd.DataFrame:
     return df.drop(columns=cols_to_drop, errors="ignore")
-
-
-def parse_dates(df: pd.DataFrame, date_cols: list[str]) -> pd.DataFrame:
-    for col in date_cols:
-        if col in df.columns:
-            df[col] = pd.to_datetime(df[col], format="%b-%Y", errors="coerce")
-    return df
 
 
 def handle_missing_values(df: pd.DataFrame) -> pd.DataFrame:
@@ -74,25 +68,19 @@ def drop_duplicates_and_nan(df: pd.DataFrame, target_col: str) -> pd.DataFrame:
     df = df.dropna(subset=[target_col])
     return df
 
-def build_training_set(config: RawDatasetConfig) -> pd.DataFrame:
-    """
-    Full ETL pipeline: read raw CSV → clean → rename → encode target → save.
 
-    Returns the cleaned DataFrame and writes it to config.output_path.
-    """
+def build_training_set(config: RawDatasetConfig) -> pd.DataFrame:
+    """Full ETL pipeline: read raw CSV → clean → rename → encode target → save."""
     df = read_chunks(config)
 
-    # Keep only fully resolved loans — drop Current, Late, In Grace Period, etc.
     df = df[df["loan_status"].isin(TARGET_MAP)]
     df["loan_paid_back"] = df["loan_status"].map(TARGET_MAP)
     df = drop_columns(df, ["loan_status"])
 
-    # Strip % suffix and convert to decimal
     for pct_col in ["int_rate", "revol_util"]:
         if pct_col in df.columns:
             df[pct_col] = df[pct_col].astype(str).str.replace("%", "", regex=False).str.strip().astype(float) / 100
 
-    # Normalise term: " 36 months" → "36 months"
     if "term" in df.columns:
         df["term"] = df["term"].str.strip()
 
@@ -106,8 +94,9 @@ def build_training_set(config: RawDatasetConfig) -> pd.DataFrame:
     logging.info("Saved %d rows to %s", len(df), output_path)
     return df
 
+
 if __name__ == "__main__":
-    config = load_config(path="src/config.yaml")
+    config = load_config(path="core/config.yaml")
     df = build_training_set(config.raw_dataset)
     logging.info("Columns: %s", df.columns.tolist())
     logging.info("Target distribution:\n%s", df["loan_paid_back"].value_counts())

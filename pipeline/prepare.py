@@ -1,3 +1,10 @@
+"""
+Step 2 of the pipeline: dataset/train.csv → stratified train/val/test splits
+with fitted scaler and encoders.
+
+Imported by services/train/train.py; not typically run standalone.
+"""
+
 import logging
 from dataclasses import dataclass
 
@@ -5,8 +12,8 @@ import pandas as pd
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import OrdinalEncoder, StandardScaler
 
-from src.config import ValidateConfig, load_config
-from src.preprocessing import process_data
+from core.config import ValidateConfig, load_config
+from core.preprocessing import process_data
 
 
 @dataclass
@@ -19,7 +26,7 @@ class PreparedData:
     encoders: dict[str, OrdinalEncoder]
 
 
-def load_and_prepare_data(config_path: str = "src/config.yaml") -> PreparedData:
+def load_and_prepare_data(config_path: str = "core/config.yaml") -> PreparedData:
     config = load_config(config_path)
     dc = config.dataset
 

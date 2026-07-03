@@ -1,11 +1,16 @@
-"""Generate an HTML profile report for the training dataset."""
+"""
+Generate an HTML profile report for the training dataset.
+
+Run from project root:
+    python notebooks/profile_dataset.py
+"""
 
 from pathlib import Path
 
 import pandas as pd
 from ydata_profiling import ProfileReport
 
-ROOT = Path(__file__).resolve().parents[2]
+ROOT = Path(__file__).resolve().parents[1]
 DATA_PATH = ROOT / "dataset" / "train.csv"
 REPORT_PATH = ROOT / "docs" / "train_profile.html"
 SAMPLE_ROWS = 10_000

@@ -3,6 +3,8 @@ from sklearn.preprocessing import StandardScaler, OrdinalEncoder
 
 
 def process_data(dataset, scaler=None, encoders=None, train=True):
+    dataset = dataset.copy()
+
     if "id" in dataset.columns:
         dataset = dataset.drop("id", axis=1)
 

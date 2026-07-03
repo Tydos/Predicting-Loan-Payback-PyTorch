@@ -1,7 +1,7 @@
 import torch.nn as nn
 
 
-class loan_predictor(nn.Module):
+class LoanPredictor(nn.Module):
     def __init__(self, num_features: int, hidden_layers: list, dropout: float):
         super().__init__()
         layers = []

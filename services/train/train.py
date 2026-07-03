@@ -1,4 +1,10 @@
-import argparse
+"""
+PyTorch neural network training, MLflow logging, and model promotion.
+
+Run:
+    PYTHONPATH=. python services/train/train.py
+"""
+
 import logging
 import os
 import pickle
@@ -14,26 +20,14 @@ import torch.nn as nn
 from torch.optim import Adam
 from torch.utils.data import DataLoader
 
-from data import load_and_prepare_data, PreparedData
-from model import (
-    LoanDataset,
-    log_baselines_to_mlflow,
-    run_all_baselines,
-    train_model,
-)
-from src.model import loan_predictor
+from trainer import LoanDataset, train_model
+from core.architecture import LoanPredictor
+from pipeline.prepare import load_and_prepare_data, PreparedData
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s", force=True
 )
-
-
-def run_baseline_evaluation(data: PreparedData) -> None:
-    target = data.config.dataset.target_column
-    logging.info("Train paid_back rate: %.3f", data.trainset[target].mean())
-    results = run_all_baselines(data.trainset, data.valset, target)
-    log_baselines_to_mlflow(results, mlflow)
 
 
 def _log_artifacts(scaler, encoders, loss_history, val_loss_history, test_loss_history) -> None:
@@ -103,11 +97,11 @@ def run_pytorch_training(data: PreparedData) -> None:
     testloader = DataLoader(LoanDataset(data.testset), batch_size=mc.batch_size, shuffle=False)
 
     logging.info("Model: input_dim=%d, hidden_layers=%s, dropout=%.2f", mc.model_input_dim, mc.hidden_layers, mc.dropout)
-    model = loan_predictor(mc.model_input_dim, mc.hidden_layers, mc.dropout).to(device)
+    model = LoanPredictor(mc.model_input_dim, mc.hidden_layers, mc.dropout).to(device)
     optimizer = Adam(model.parameters(), lr=mc.learning_rate, weight_decay=mc.weight_decay)
     criterion = nn.BCEWithLogitsLoss()
 
-    logging.info("Starting MLflow run (experiment=%s, epochs=%d, lr=%s)", mlflow_config.experiment_name, mc.epoch, mc.learning_rate)
+    logging.info("Starting MLflow run (experiment=%s, epochs=%d)", mlflow_config.experiment_name, mc.epoch)
 
     with mlflow.start_run(run_name="pytorch_nn") as run:
         mlflow.enable_system_metrics_logging()
@@ -123,37 +117,19 @@ def run_pytorch_training(data: PreparedData) -> None:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(
-        description="Run sklearn baselines and PyTorch training on the same split."
-    )
-    parser.add_argument("--baselines-only", action="store_true", help="Evaluate sklearn baselines only.")
-    parser.add_argument("--skip-baselines", action="store_true", help="Skip baselines; run PyTorch only.")
-    args = parser.parse_args()
-
-    if args.baselines_only and args.skip_baselines:
-        raise SystemExit("Use only one of --baselines-only or --skip-baselines.")
-
     try:
         logging.info("Using device: %s", device)
         data = load_and_prepare_data()
 
-        experiment_name = data.config.mlflow.experiment_name
         repo_owner = os.getenv("DAGSHUB_REPO_OWNER", "pjawale")
         repo_name = os.getenv("DAGSHUB_REPO_NAME", "credit-scorer")
         dagshub.init(repo_owner=repo_owner, repo_name=repo_name, mlflow=True)
-        mlflow.set_experiment(experiment_name)
-        logging.info("DagsHub MLflow — repo=%s/%s, experiment=%s", repo_owner, repo_name, experiment_name)
+        mlflow.set_experiment(data.config.mlflow.experiment_name)
+        logging.info("DagsHub MLflow — repo=%s/%s", repo_owner, repo_name)
 
-        if not args.skip_baselines:
-            logging.info("Running sklearn baseline evaluation")
-            run_baseline_evaluation(data)
-            logging.info("Baseline evaluation complete")
-
-        if not args.baselines_only:
-            logging.info("Running PyTorch training")
-            run_pytorch_training(data)
+        run_pytorch_training(data)
     except Exception as exc:
-        logging.error("Training pipeline failed: %s", exc, exc_info=True)
+        logging.error("Training failed: %s", exc, exc_info=True)
         raise SystemExit(1) from exc
 
 

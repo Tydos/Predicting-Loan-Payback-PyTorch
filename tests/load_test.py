@@ -1,5 +1,7 @@
 import random
+
 from locust import HttpUser, between, task
+
 
 def random_application() -> dict:
     """Generate a valid LoanApplicationPayload on every call."""
@@ -26,9 +28,10 @@ def random_application() -> dict:
         "loan_purpose": random.choice(PURPOSES),
     }
 
+
 class User(HttpUser):
-    "Simulate a user using the API"
-    wait_time = between(0.1,0.5) # wait 100<500ms before sending the next response
+    """Simulate a user hitting the inference API."""
+    wait_time = between(0.1, 0.5)
 
     @task(10)
     def predict(self):
@@ -37,11 +40,11 @@ class User(HttpUser):
             "/predict",
             json=payload,
             name="/predict",
-            catch_response=True
+            catch_response=True,
         ) as resp:
             if resp.status_code != 200:
-                  resp.failure(f"status={resp.status_code}, body={resp.text[:200]}")
-                  return
+                resp.failure(f"status={resp.status_code}, body={resp.text[:200]}")
+                return
             try:
                 body = resp.json()
             except Exception as exc:

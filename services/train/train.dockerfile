@@ -1,8 +1,3 @@
-# Training server
-# Runs: python -m src.main
-# Expects volumes from docker-compose.yml:
-#   ./dataset:/app/dataset:ro
-
 FROM python:3.11-slim
 
 ENV PYTHONDONTWRITEBYTECODE=1
@@ -17,6 +12,7 @@ RUN pip install --no-cache-dir --upgrade pip && \
     pip install --no-cache-dir -r requirements.txt
 
 COPY services/train/ .
-COPY src/ src/
+COPY core/ core/
+COPY pipeline/ pipeline/
 
 ENTRYPOINT ["python", "train.py"]
