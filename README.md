@@ -1,6 +1,6 @@
 ## Credit Risk Scorer
 
-Credit Risk Scorer is a containerized MLOps pipeline that trains a PyTorch neural network on ~594,000 historical loan records (sourced from Kaggle) to predict whether a borrower will repay or default. Training runs are tracked remotely on DagsHub's hosted MLflow, which handles experiment logging, artifact storage (scaler, encoders, loss curves), model registration, and the champion alias that gates production promotion. The inference service is a FastAPI app that loads the champion model at startup, serves a built-in UI for manual loan application scoring, and exposes endpoints for prediction, model validation results, and health checking — all packaged as Docker images orchestrated via Docker Compose.
+Credit Risk Scorer is a containerized MLOps pipeline that trains an untuned XGBoost classifier on ~594,000 historical loan records (sourced from Kaggle) to predict whether a borrower will repay or default. The model is exported to ONNX and tracked remotely on DagsHub's hosted MLflow, which handles experiment logging, artifact storage (scaler, encoders, ONNX model), model registration, and the champion alias that gates production promotion. The inference service is a FastAPI app that loads the champion ONNX model via ONNX Runtime at startup, serves a built-in UI for manual loan application scoring, and exposes endpoints for prediction, model validation results, and health checking — all packaged as Docker images orchestrated via Docker Compose.
 
 ## What it does
 
@@ -17,7 +17,9 @@ Credit-Risk-Scorer/
 ├── core/                        # Shared library used by both services
 │   ├── config.py                # Pydantic config models + loader
 │   ├── config.yaml              # Single source of truth for all settings
-│   ├── architecture.py          # LoanPredictor nn.Module definition
+│   ├── architecture.py          # LoanPredictor nn.Module (experimental PyTorch)
+│   ├── metrics.py               # Shared validation metrics helpers
+│   ├── onnx_model.py            # ONNX export + ONNX Runtime inference helpers
 │   ├── preprocessing.py         # Scaler/encoder fit+transform utilities
 │   └── schema.py                # LoanApplicationPayload (API request schema)
 │
@@ -28,8 +30,9 @@ Credit-Risk-Scorer/
 ├── services/
 │   ├── train/
 │   │   ├── baselines.py         # Runnable: majority-class + logistic regression
-│   │   ├── trainer.py           # PyTorch training loop (imported by train.py)
-│   │   └── train.py             # Runnable: PyTorch training + model promotion
+│   │   ├── pytorch_train.py     # Optional: experimental PyTorch training
+│   │   ├── trainer.py           # PyTorch training loop (used by pytorch_train.py)
+│   │   └── train.py             # Runnable: XGBoost training + ONNX promotion
 │   └── inference/
 │       └── app.py               # FastAPI inference service
 │
@@ -101,10 +104,17 @@ PYTHONPATH=. python pipeline/etl.py
 PYTHONPATH=. python services/train/baselines.py
 ```
 
-**Step 3 — PyTorch training** (trains the neural network, registers + promotes the model):
+**Step 3 — XGBoost training** (trains default XGBoost, exports ONNX, registers + promotes the model):
 
 ```bash
 PYTHONPATH=. python services/train/train.py
+```
+
+**Optional — PyTorch training** (experimental, not promoted to champion):
+
+```bash
+pip install -e ".[pytorch]"
+PYTHONPATH=. python services/train/pytorch_train.py
 ```
 
 **Step 4 — Inference API**:

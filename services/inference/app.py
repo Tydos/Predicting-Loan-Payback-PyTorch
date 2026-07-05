@@ -8,16 +8,15 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 
 import dagshub
-import mlflow.pytorch
-import torch
-from fastapi import Depends, FastAPI, HTTPException, Header, Request
+import mlflow.onnx
+from core.config import load_config
+from core.onnx_model import create_session, predict_proba
+from core.preprocessing import application_to_features
+from core.schema import LoanApplicationPayload, SAMPLE_APPLICATION, loan_application_schema
+from fastapi import Depends, FastAPI, Header, HTTPException, Request
 from fastapi.responses import HTMLResponse
 from mlflow.exceptions import MlflowException
 from mlflow.tracking import MlflowClient
-
-from core.config import load_config
-from core.preprocessing import application_to_features
-from core.schema import LoanApplicationPayload
 
 logging.basicConfig(level=logging.INFO)
 
@@ -26,7 +25,7 @@ STATIC_DIR = Path(__file__).parent / "static"
 
 
 def _load_model(client: MlflowClient, model_name: str):
-    """Loads the champion model from MLflow."""
+    """Loads the champion ONNX model from MLflow."""
     try:
         mv = client.get_model_version_by_alias(model_name, CHAMPION_ALIAS)
     except MlflowException:
@@ -34,9 +33,9 @@ def _load_model(client: MlflowClient, model_name: str):
 
     uri = f"models:/{model_name}@{CHAMPION_ALIAS}"
     try:
-        model = mlflow.pytorch.load_model(uri)
-        model.eval()
-        return model, int(mv.version), uri
+        model_proto = mlflow.onnx.load_model(uri)
+        session = create_session(model_proto)
+        return session, int(mv.version), uri
     except Exception as e:
         raise RuntimeError(f"Failed to load model '{model_name}': {e}") from e
 
@@ -66,7 +65,7 @@ def _load_preprocessing(client: MlflowClient, model_name: str, version: int):
 
 
 def _require_ready(request: Request) -> None:
-    if request.app.state.model is None:
+    if request.app.state.session is None:
         raise HTTPException(status_code=503, detail="Model not loaded")
     if request.app.state.scaler is None:
         raise HTTPException(status_code=503, detail="Preprocessing artifacts not loaded")
@@ -98,7 +97,7 @@ async def lifespan(app: FastAPI):
     config = load_config("core/config.yaml")
     app.state.config = config
     app.state.start_time = time.time()
-    app.state.model = None
+    app.state.session = None
     app.state.model_version = None
     app.state.model_uri = None
     app.state.model_name = config.mlflow.model_name
@@ -108,8 +107,8 @@ async def lifespan(app: FastAPI):
 
     try:
         client = MlflowClient()
-        model, version, uri = _load_model(client, config.mlflow.model_name)
-        app.state.model = model
+        session, version, uri = _load_model(client, config.mlflow.model_name)
+        app.state.session = session
         app.state.model_version = version
         app.state.model_uri = uri
         app.state.scaler, app.state.encoders = _load_preprocessing(
@@ -122,7 +121,7 @@ async def lifespan(app: FastAPI):
     logging.info("Server startup complete")
     yield
 
-    app.state.model = None
+    app.state.session = None
     app.state.scaler = None
     app.state.encoders = None
 
@@ -138,7 +137,9 @@ def root(request: Request):
 @app.get("/schema")
 def schema(request: Request):
     return {
+        "fields": loan_application_schema(),
         "features": request.app.state.feature_columns,
+        "sample_application": SAMPLE_APPLICATION,
         "preprocessing_available": request.app.state.scaler is not None,
         "prediction_threshold": request.app.state.config.inference.prediction_threshold,
         "target": "loan_paid_back",
@@ -152,12 +153,12 @@ def reload_model(request: Request):
     config = request.app.state.config
     try:
         client = MlflowClient()
-        model, version, uri = _load_model(client, config.mlflow.model_name)
+        session, version, uri = _load_model(client, config.mlflow.model_name)
         scaler, encoders = _load_preprocessing(client, config.mlflow.model_name, version)
     except RuntimeError as re:
         raise HTTPException(status_code=503, detail=f"Could not reload due to {re}")
 
-    request.app.state.model = model
+    request.app.state.session = session
     request.app.state.model_version = version
     request.app.state.model_uri = uri
     request.app.state.scaler = scaler
@@ -181,15 +182,13 @@ def predict_endpoint(payload: LoanApplicationPayload, request: Request):
     except Exception as exc:
         raise HTTPException(status_code=422, detail=f"Preprocessing failed: {exc}") from exc
 
-    inputs = torch.tensor(features, dtype=torch.float32).unsqueeze(0)
     threshold = request.app.state.config.inference.prediction_threshold
 
     t0 = time.perf_counter()
-    with torch.no_grad():
-        logits = request.app.state.model(inputs).squeeze(-1)
+    prob = predict_proba(request.app.state.session, features)
     model_latency = time.perf_counter() - t0
 
-    prob = round(torch.sigmoid(logits).item(), 4)
+    prob = round(prob, 4)
     pred = int(prob >= threshold)
 
     return {
@@ -204,7 +203,7 @@ def predict_endpoint(payload: LoanApplicationPayload, request: Request):
 
 @app.get("/health_check", status_code=200)
 def health_check(request: Request):
-    model_loaded = request.app.state.model is not None
+    model_loaded = request.app.state.session is not None
     mlflow_ok = False
     try:
         MlflowClient().search_experiments(max_results=1)
@@ -231,7 +230,7 @@ def results(request: Request):
             request.app.state.config.mlflow.experiment_name
         )
         if experiment is None:
-            return {"baselines": [], "pytorch_model": None}
+            return {"baselines": [], "xgboost_model": None}
 
         runs = client.search_runs(
             experiment_ids=[experiment.experiment_id],
@@ -240,20 +239,20 @@ def results(request: Request):
 
         baseline_names = {"majority_class", "logistic_regression"}
         baselines, seen = [], set()
-        pytorch_model = None
+        xgboost_model = None
 
         for run in runs:
             name = run.info.run_name
             if name in baseline_names and name not in seen:
                 seen.add(name)
                 baselines.append({"name": name, "val_auc": run.data.metrics.get("val_auc")})
-            elif name == "pytorch_nn" and pytorch_model is None:
+            elif name == "xgboost" and xgboost_model is None:
                 version = request.app.state.model_version
-                pytorch_model = {
-                    "name": f"PyTorch NN v{version}" if version else "PyTorch NN",
+                xgboost_model = {
+                    "name": f"XGBoost v{version}" if version else "XGBoost",
                     "val_auc": run.data.metrics.get("val_auc"),
                 }
 
-        return {"baselines": baselines, "pytorch_model": pytorch_model}
+        return {"baselines": baselines, "xgboost_model": xgboost_model}
     except Exception as exc:
         raise HTTPException(status_code=503, detail=str(exc))

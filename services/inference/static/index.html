@@ -45,47 +45,9 @@
 
           <form id="applicationForm">
             <fieldset>
-              <legend>Borrower &amp; loan terms</legend>
-              <div class="grid-2">
-                <label>
-                  Annual income (USD)
-                  <input type="number" name="annual_income" min="0" step="1000" required placeholder="72000" />
-                </label>
-                <label>
-                  Debt-to-income ratio
-                  <input type="number" name="debt_to_income_ratio" min="0" max="1" step="0.01" required placeholder="0.28" />
-                  <span class="field-hint">Enter as decimal: 0.28 = 28%</span>
-                </label>
-                <label>
-                  Credit score
-                  <input type="number" name="credit_score" min="300" max="850" required placeholder="710" />
-                </label>
-                <label>
-                  Requested loan amount (USD)
-                  <input type="number" name="loan_amount" min="0" step="500" required placeholder="15000" />
-                </label>
-                <label>
-                  Interest rate (APR)
-                  <input type="number" name="interest_rate" min="0" max="1" step="0.001" required placeholder="0.118" />
-                  <span class="field-hint">Enter as decimal: 0.118 = 11.8%</span>
-                </label>
-                <label>
-                  Loan grade
-                  <select name="grade_subgrade" required></select>
-                  <span class="field-hint">A = lowest risk band, G = highest</span>
-                </label>
-              </div>
-            </fieldset>
-
-            <fieldset>
-              <legend>Applicant profile</legend>
-              <div class="grid-2">
-                <label>Gender<select name="gender" required></select></label>
-                <label>Marital status<select name="marital_status" required></select></label>
-                <label>Education level<select name="education_level" required></select></label>
-                <label>Employment status<select name="employment_status" required></select></label>
-                <label class="full">Loan purpose<select name="loan_purpose" required></select></label>
-              </div>
+              <legend>Loan application</legend>
+              <p class="muted">Fields loaded from <code>/schema</code>.</p>
+              <div id="formFields" class="grid-2"></div>
             </fieldset>
 
             <div class="actions">
@@ -116,7 +78,7 @@
               <div class="stat"><span>Estimated payback probability</span><strong id="paidBackProbability">—</strong></div>
               <div class="stat"><span>Estimated default probability</span><strong id="defaultProbability">—</strong></div>
               <div class="stat"><span>Primary read</span><strong id="predictionLabel">—</strong></div>
-              <div class="stat"><span>Policy threshold</span><strong>50% payback probability</strong></div>
+              <div class="stat"><span>Policy threshold</span><strong id="policyThreshold">50% payback probability</strong></div>
             </div>
 
             <div class="bar">

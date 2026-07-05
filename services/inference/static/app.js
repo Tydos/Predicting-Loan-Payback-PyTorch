@@ -1,62 +1,30 @@
-const FIELD_OPTIONS = {
-  gender: ["Female", "Male", "Other"],
-  marital_status: ["Single", "Married", "Divorced", "Widowed"],
-  education_level: [
-    "High School",
-    "Associate",
-    "Bachelor",
-    "Master",
-    "Doctorate",
-  ],
-  employment_status: [
-    "Employed",
-    "Self-employed",
-    "Unemployed",
-    "Retired",
-    "Student",
-  ],
-  loan_purpose: [
-    "Debt consolidation",
-    "Home improvement",
-    "Medical",
-    "Education",
-    "Business",
-    "Other",
-  ],
-  grade_subgrade: [
-    "A1", "A2", "A3", "A4", "A5",
-    "B1", "B2", "B3", "B4", "B5",
-    "C1", "C2", "C3", "C4", "C5",
-    "D1", "D2", "D3", "D4", "D5",
-    "E1", "E2", "E3", "E4", "E5",
-    "F1", "F2", "F3", "F4", "F5",
-    "G1", "G2", "G3", "G4", "G5",
-  ],
-};
-
 const MODEL_DISPLAY_NAMES = {
   majority_class: "Approve-all policy",
-  credit_score_rule: "Minimum score rule (650+)",
   logistic_regression: "Traditional scorecard",
-  random_forest: "Ensemble benchmark",
-  hist_gradient_boosting: "Gradient boosting benchmark",
 };
 
-const SAMPLE_APPLICATION = {
-  annual_income: 72000,
-  debt_to_income_ratio: 0.28,
-  credit_score: 710,
-  loan_amount: 15000,
-  interest_rate: 0.118,
-  gender: "Female",
-  marital_status: "Married",
-  education_level: "Bachelor",
-  employment_status: "Employed",
-  loan_purpose: "Debt consolidation",
-  grade_subgrade: "B3",
+const FIELD_LABELS = {
+  loan_amount: "Requested loan amount (USD)",
+  annual_income: "Annual income (USD)",
+  debt_to_income_ratio: "Debt-to-income ratio",
+  credit_score: "Credit score",
+  interest_rate: "Interest rate (APR)",
+  installment: "Monthly installment (USD)",
+  revol_util: "Revolving credit utilisation",
+  grade: "Loan grade",
+  term: "Loan term",
+  loan_purpose: "Loan purpose",
+};
+
+const FIELD_HINTS = {
+  debt_to_income_ratio: "Enter as decimal: 0.28 = 28%",
+  interest_rate: "Enter as decimal: 0.118 = 11.8%",
+  revol_util: "Enter as decimal: 0.55 = 55%",
+  grade: "A = lowest risk band, G = highest",
 };
 
 const form = document.getElementById("applicationForm");
+const formFields = document.getElementById("formFields");
 const submitBtn = document.getElementById("submitBtn");
 const loadSampleBtn = document.getElementById("loadSampleBtn");
 const resultEmpty = document.getElementById("resultEmpty");
@@ -64,22 +32,94 @@ const resultContent = document.getElementById("resultContent");
 const errorAlert = document.getElementById("errorAlert");
 const resultSubtitle = document.getElementById("resultSubtitle");
 
+let applicationSchema = null;
 let preprocessingAvailable = false;
 let modelAvailable = false;
 
-function populateSelects() {
-  Object.entries(FIELD_OPTIONS).forEach(([name, options]) => {
-    const select = form.elements[name];
-    select.innerHTML = [
-      '<option value="" disabled selected>Select…</option>',
-      ...options.map((option) => `<option value="${option}">${option}</option>`),
-    ].join("");
-  });
+function formatFieldLabel(name) {
+  return FIELD_LABELS[name] ?? name.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+}
+
+function formatOptionLabel(value) {
+  return value.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+}
+
+function buildNumberInput(name, meta, sampleValue) {
+  const input = document.createElement("input");
+  input.type = "number";
+  input.name = name;
+  input.required = Boolean(meta.required);
+
+  if (meta.type === "integer") {
+    input.step = "1";
+  } else if (name === "interest_rate" || name === "revol_util" || name === "debt_to_income_ratio") {
+    input.step = "0.001";
+  } else {
+    input.step = "any";
+  }
+
+  if (meta.minimum !== undefined) input.min = String(meta.minimum);
+  if (meta.maximum !== undefined) input.max = String(meta.maximum);
+  if (meta.exclusiveMinimum !== undefined) {
+    input.min = String(meta.exclusiveMinimum);
+  }
+
+  if (sampleValue !== undefined) {
+    input.placeholder = String(sampleValue);
+  }
+
+  return input;
+}
+
+function buildSelectInput(name, meta) {
+  const select = document.createElement("select");
+  select.name = name;
+  select.required = Boolean(meta.required);
+  select.innerHTML = [
+    '<option value="" disabled selected>Select…</option>',
+    ...(meta.options ?? []).map(
+      (option) => `<option value="${option}">${formatOptionLabel(option)}</option>`
+    ),
+  ].join("");
+  return select;
+}
+
+function buildFormFields(schema) {
+  formFields.innerHTML = "";
+  const sample = schema.sample_application ?? {};
+
+  for (const name of schema.features ?? Object.keys(schema.fields)) {
+    const meta = schema.fields[name];
+    if (!meta) continue;
+
+    const label = document.createElement("label");
+    label.textContent = formatFieldLabel(name);
+
+    const control =
+      meta.options?.length > 0
+        ? buildSelectInput(name, meta)
+        : buildNumberInput(name, meta, sample[name]);
+
+    label.appendChild(control);
+
+    if (FIELD_HINTS[name]) {
+      const hint = document.createElement("span");
+      hint.className = "field-hint";
+      hint.textContent = FIELD_HINTS[name];
+      label.appendChild(hint);
+    }
+
+    if (meta.description) {
+      label.title = meta.description;
+    }
+
+    formFields.appendChild(label);
+  }
 }
 
 function formatModelName(name) {
   if (!name) return "—";
-  if (name.startsWith("PyTorch NN")) {
+  if (name.startsWith("XGBoost")) {
     const versionMatch = name.match(/v(\d+)/);
     return versionMatch
       ? `Production risk model (v${versionMatch[1]})`
@@ -232,6 +272,13 @@ function formatPercent(value) {
   return `${(value * 100).toFixed(1)}%`;
 }
 
+function updatePolicyThreshold(threshold) {
+  const el = document.getElementById("policyThreshold");
+  if (el && threshold !== undefined) {
+    el.textContent = `${(threshold * 100).toFixed(0)}% payback probability`;
+  }
+}
+
 function renderResult(data) {
   const isPaidBack = data.prediction === 1;
   const defaultProbability = data.default_probability ?? (1 - data.confidence);
@@ -259,19 +306,23 @@ function renderResult(data) {
 
 function readFormData() {
   const formData = new FormData(form);
-  return {
-    annual_income: Number(formData.get("annual_income")),
-    debt_to_income_ratio: Number(formData.get("debt_to_income_ratio")),
-    credit_score: Number(formData.get("credit_score")),
-    loan_amount: Number(formData.get("loan_amount")),
-    interest_rate: Number(formData.get("interest_rate")),
-    gender: formData.get("gender"),
-    marital_status: formData.get("marital_status"),
-    education_level: formData.get("education_level"),
-    employment_status: formData.get("employment_status"),
-    loan_purpose: formData.get("loan_purpose"),
-    grade_subgrade: formData.get("grade_subgrade"),
-  };
+  const payload = {};
+
+  for (const name of applicationSchema?.features ?? []) {
+    const meta = applicationSchema.fields[name];
+    const raw = formData.get(name);
+    if (raw === null || raw === "") continue;
+
+    if (meta?.options || meta?.type === "string") {
+      payload[name] = raw;
+    } else if (meta?.type === "integer") {
+      payload[name] = Number.parseInt(raw, 10);
+    } else {
+      payload[name] = Number(raw);
+    }
+  }
+
+  return payload;
 }
 
 function fillForm(application) {
@@ -280,6 +331,20 @@ function fillForm(application) {
       form.elements[key].value = value;
     }
   });
+}
+
+async function loadSchema() {
+  const response = await fetch("/schema");
+  const data = await response.json();
+  if (!response.ok) {
+    throw new Error(data.detail || "Could not load application schema.");
+  }
+  applicationSchema = data;
+  buildFormFields(data);
+  updatePolicyThreshold(data.prediction_threshold);
+  if (data.sample_application) {
+    fillForm(data.sample_application);
+  }
 }
 
 async function checkHealth() {
@@ -309,7 +374,7 @@ async function refreshBaselines() {
       throw new Error(data.detail || "Could not load benchmarks.");
     }
 
-    if (!data.baselines?.length && !data.pytorch_model) {
+    if (!data.baselines?.length && !data.xgboost_model) {
       baselinesSubtitle.textContent = "Validation results are not available yet.";
       benchmarkRows = [];
       drawBenchmarkChart(benchmarkRows);
@@ -317,8 +382,8 @@ async function refreshBaselines() {
     }
 
     benchmarkRows = [...(data.baselines || [])];
-    if (data.pytorch_model) {
-      benchmarkRows.push(data.pytorch_model);
+    if (data.xgboost_model) {
+      benchmarkRows.push(data.xgboost_model);
     }
 
     baselinesSubtitle.textContent =
@@ -371,13 +436,25 @@ async function submitApplication(event) {
   }
 }
 
-populateSelects();
-checkHealth();
-refreshBaselines();
+async function init() {
+  try {
+    await loadSchema();
+  } catch (error) {
+    showError(error.message);
+  }
+  await checkHealth();
+  await refreshBaselines();
+}
+
+init();
 window.addEventListener("resize", () => {
   if (benchmarkRows.length) {
     drawBenchmarkChart(benchmarkRows);
   }
 });
 form.addEventListener("submit", submitApplication);
-loadSampleBtn.addEventListener("click", () => fillForm(SAMPLE_APPLICATION));
+loadSampleBtn.addEventListener("click", () => {
+  if (applicationSchema?.sample_application) {
+    fillForm(applicationSchema.sample_application);
+  }
+});

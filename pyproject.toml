@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "credit-risk-scorer"
 version = "0.1.0"
-description = "Containerized MLOps pipeline for credit risk scoring with PyTorch training and FastAPI inference."
+description = "Containerized MLOps pipeline for credit risk scoring with XGBoost/ONNX training and FastAPI inference."
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
@@ -14,13 +14,17 @@ dependencies = [
     "matplotlib",
     "mlflow",
     "numpy",
+    "onnx",
+    "onnxruntime",
     "pandas",
     "psutil",
     "pydantic",
     "pyyaml",
     "scikit-learn",
+    "onnxmltools",
     "tqdm",
     "uvicorn[standard]",
+    "xgboost",
 ]
 
 [project.optional-dependencies]
@@ -28,6 +32,9 @@ dev = [
     "httpx>=0.27",
     "pytest>=8.0",
     "ruff>=0.8",
+]
+pytorch = [
+    "torch",
 ]
 eda = [
     "ipykernel",
