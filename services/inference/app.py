@@ -1,3 +1,4 @@
+import asyncio
 import logging
 import os
 import pickle
@@ -64,6 +65,35 @@ def _load_preprocessing(client: MlflowClient, model_name: str, version: int):
     return scaler, encoders
 
 
+def _init_dagshub() -> None:
+    dagshub.init(
+        repo_owner=os.getenv("DAGSHUB_REPO_OWNER", "pjawale"),
+        repo_name=os.getenv("DAGSHUB_REPO_NAME", "credit-scorer"),
+        mlflow=True,
+    )
+
+
+def _load_ui() -> str:
+    html = (STATIC_DIR / "index.html").read_text()
+    css = (STATIC_DIR / "styles.css").read_text()
+    js = (STATIC_DIR / "app.js").read_text()
+    html = html.replace('<link rel="stylesheet" href="/assets/styles.css" />', f"<style>{css}</style>")
+    return html.replace('<script src="/assets/app.js"></script>', f"<script>{js}</script>")
+
+
+def _load_production_model(model_name: str) -> dict:
+    client = MlflowClient()
+    session, version, uri = _load_model(client, model_name)
+    scaler, encoders = _load_preprocessing(client, model_name, version)
+    return {
+        "session": session,
+        "version": version,
+        "uri": uri,
+        "scaler": scaler,
+        "encoders": encoders,
+    }
+
+
 def _require_ready(request: Request) -> None:
     if request.app.state.session is None:
         raise HTTPException(status_code=503, detail="Model not loaded")
@@ -81,19 +111,6 @@ def _require_admin(x_api_key: str = Header(...)) -> bool:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    dagshub.init(
-        repo_owner=os.getenv("DAGSHUB_REPO_OWNER", "pjawale"),
-        repo_name=os.getenv("DAGSHUB_REPO_NAME", "credit-scorer"),
-        mlflow=True,
-    )
-
-    html = (STATIC_DIR / "index.html").read_text()
-    css = (STATIC_DIR / "styles.css").read_text()
-    js = (STATIC_DIR / "app.js").read_text()
-    html = html.replace('<link rel="stylesheet" href="/assets/styles.css" />', f"<style>{css}</style>")
-    html = html.replace('<script src="/assets/app.js"></script>', f"<script>{js}</script>")
-    app.state.index_html = html
-
     config = load_config("core/config.yaml")
     app.state.config = config
     app.state.start_time = time.time()
@@ -105,16 +122,23 @@ async def lifespan(app: FastAPI):
     app.state.scaler = None
     app.state.encoders = None
 
+    dagshub_task = asyncio.create_task(asyncio.to_thread(_init_dagshub))
+    ui_task = asyncio.create_task(asyncio.to_thread(_load_ui))
+
+    await dagshub_task
+    model_task = asyncio.create_task(
+        asyncio.to_thread(_load_production_model, config.mlflow.model_name)
+    )
+
+    app.state.index_html = await ui_task
     try:
-        client = MlflowClient()
-        session, version, uri = _load_model(client, config.mlflow.model_name)
-        app.state.session = session
-        app.state.model_version = version
-        app.state.model_uri = uri
-        app.state.scaler, app.state.encoders = _load_preprocessing(
-            client, config.mlflow.model_name, version
-        )
-        logging.info("Production model v%s loaded", version)
+        loaded = await model_task
+        app.state.session = loaded["session"]
+        app.state.model_version = loaded["version"]
+        app.state.model_uri = loaded["uri"]
+        app.state.scaler = loaded["scaler"]
+        app.state.encoders = loaded["encoders"]
+        logging.info("Production model v%s loaded", loaded["version"])
     except RuntimeError as exc:
         logging.warning("Starting without production model: %s", exc)
 
