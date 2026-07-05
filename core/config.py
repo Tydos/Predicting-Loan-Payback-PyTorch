@@ -42,7 +42,7 @@ class InferenceConfig(BaseModel):
 class ValidateConfig(BaseModel):
     raw_dataset: RawDatasetConfig
     dataset: DatasetConfig
-    pytorch: PyTorchConfig
+    pytorch: PyTorchConfig | None = None
     mlflow: MLflowConfig
     inference: InferenceConfig
 

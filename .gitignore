@@ -10,3 +10,5 @@ mlruns/
 .vscode
 dataset/*
 !dataset/*.dvc
+.pytest_cache/
+credit_risk_scorer.egg-info/

@@ -3,14 +3,11 @@ from unittest.mock import MagicMock
 import pytest
 from fastapi.testclient import TestClient
 
-from core.architecture import LoanPredictor
-
 
 @pytest.fixture
 def inference_client(fitted_preprocessing, monkeypatch):
     scaler, encoders, _ = fitted_preprocessing
-    model = LoanPredictor(num_features=10, hidden_layers=[8, 4], dropout=0.0)
-    model.eval()
+    session = MagicMock()
 
     mlflow_client = MagicMock()
     mlflow_client.search_experiments.return_value = []
@@ -22,7 +19,7 @@ def inference_client(fitted_preprocessing, monkeypatch):
     monkeypatch.setattr(
         app_module,
         "_load_model",
-        lambda client, model_name: (model, 7, "models:/LoanPayback@champion"),
+        lambda client, model_name: (session, 7, "models:/LoanPayback@champion"),
     )
     monkeypatch.setattr(
         app_module,
@@ -30,6 +27,7 @@ def inference_client(fitted_preprocessing, monkeypatch):
         lambda client, model_name, version: (scaler, encoders),
     )
     monkeypatch.setattr(app_module, "MlflowClient", lambda: mlflow_client)
+    monkeypatch.setattr(app_module, "predict_proba", lambda sess, features: 0.75)
 
     with TestClient(app_module.app) as client:
         yield client
@@ -53,6 +51,11 @@ def test_schema_endpoint_exposes_feature_metadata(inference_client):
     assert response.status_code == 200
     body = response.json()
     assert len(body["features"]) == 10
+    assert len(body["fields"]) == 10
+    assert "loan_amount" in body["fields"]
+    assert body["fields"]["credit_score"]["type"] == "integer"
+    assert body["fields"]["grade"]["options"] == ["A", "B", "C", "D", "E", "F", "G"]
+    assert body["sample_application"]["loan_amount"] == 12_000.0
     assert body["preprocessing_available"] is True
     assert body["target"] == "loan_paid_back"
 

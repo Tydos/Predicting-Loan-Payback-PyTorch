@@ -1,68 +1,56 @@
 """
-PyTorch neural network training, MLflow logging, and model promotion.
+XGBoost training, ONNX export, MLflow logging, and model promotion.
 
 Run:
     PYTHONPATH=. python services/train/train.py
 """
 
 import logging
+import math
 import os
 import pickle
 import tempfile
 from pathlib import Path
 
 import dagshub
-import matplotlib.pyplot as plt
 import mlflow
-import mlflow.pytorch
-import torch
-import torch.nn as nn
-from torch.optim import Adam
-from torch.utils.data import DataLoader
+import mlflow.onnx
+import numpy as np
+from core.metrics import score, xy
+from core.onnx_model import create_session, export_xgboost, predict_proba
+from pipeline.prepare import PreparedData, load_and_prepare_data
+from xgboost import XGBClassifier
 
-from trainer import LoanDataset, train_model
-from core.architecture import LoanPredictor
-from pipeline.prepare import load_and_prepare_data, PreparedData
-
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s", force=True
 )
 
 
-def _log_artifacts(scaler, encoders, loss_history, val_loss_history, test_loss_history) -> None:
-    logging.info("Logging artifacts to MLflow (scaler, encoders, loss curve)")
-    epochs_range = range(1, len(loss_history) + 1)
-    plt.figure(figsize=(8, 5))
-    plt.plot(epochs_range, loss_history, label="Train Loss")
-    plt.plot(epochs_range, val_loss_history, label="Validation Loss")
-    plt.plot(epochs_range, test_loss_history, label="Test Loss")
-    plt.xlabel("Epoch")
-    plt.ylabel("Loss")
-    plt.title("Training, Validation, and Test Loss")
-    plt.legend()
-    plt.grid(True)
-
+def _log_preprocessing_artifacts(scaler, encoders) -> None:
+    logging.info("Logging preprocessing artifacts to MLflow")
     with tempfile.TemporaryDirectory() as tmp:
         tmp_path = Path(tmp)
         (tmp_path / "scaler.pkl").write_bytes(pickle.dumps(scaler))
         (tmp_path / "encoders.pkl").write_bytes(pickle.dumps(encoders))
-        plt.savefig(tmp_path / "loss_curves.png")
         mlflow.log_artifact(str(tmp_path / "scaler.pkl"))
         mlflow.log_artifact(str(tmp_path / "encoders.pkl"))
-        mlflow.log_artifact(str(tmp_path / "loss_curves.png"))
-
-    plt.close()
 
 
-def _register_and_promote(model, run_id: str, model_name: str, input_dim: int) -> int:
-    logging.info("Logging model artifact for run %s", run_id)
-    model_info = mlflow.pytorch.log_model(
-        model,
-        name="models",
-        input_example=torch.zeros(1, input_dim, dtype=torch.float32),
-        pip_requirements=["torch", "mlflow"],
-        serialization_format=mlflow.pytorch.SERIALIZATION_FORMAT_PICKLE,
+def _log_metrics(result) -> None:
+    mlflow.log_metric("val_auc", result.auc)
+    mlflow.log_metric("val_f1", result.f1)
+    mlflow.log_metric("val_accuracy", result.accuracy)
+    mlflow.log_metric("val_precision", result.precision)
+    mlflow.log_metric("val_recall", result.recall)
+
+
+def _register_and_promote(onnx_model, model_name: str, n_features: int) -> int:
+    logging.info("Logging ONNX model artifact")
+    model_info = mlflow.onnx.log_model(
+        onnx_model,
+        artifact_path="model",
+        input_example=np.zeros((1, n_features), dtype=np.float32),
+        pip_requirements=["onnxruntime", "mlflow"],
     )
 
     logging.info("Registering model '%s' from %s", model_name, model_info.model_uri)
@@ -70,12 +58,11 @@ def _register_and_promote(model, run_id: str, model_name: str, input_dim: int) -
     version = int(result.version)
 
     client = mlflow.MlflowClient()
-    loaded = mlflow.pytorch.load_model(f"models:/{model_name}/{version}")
-    loaded.eval()
-    with torch.no_grad():
-        output = loaded(torch.zeros(1, input_dim))
+    loaded = mlflow.onnx.load_model(f"models:/{model_name}/{version}")
+    session = create_session(loaded)
+    prob = predict_proba(session, [0.0] * n_features)
 
-    if torch.isfinite(output).all().item():
+    if math.isfinite(prob):
         client.set_registered_model_alias(model_name, "champion", str(version))
         logging.info("Model version %s aliased as 'champion'", version)
     else:
@@ -84,41 +71,35 @@ def _register_and_promote(model, run_id: str, model_name: str, input_dim: int) -
     return version
 
 
-def run_pytorch_training(data: PreparedData) -> None:
-    mc = data.config.pytorch
+def run_xgboost_training(data: PreparedData) -> None:
+    target = data.config.dataset.target_column
     mlflow_config = data.config.mlflow
+    n_features = len(data.config.dataset.features)
 
-    logging.info(
-        "Building dataloaders (batch_size=%d, train=%d, val=%d, test=%d)",
-        mc.batch_size, len(data.trainset), len(data.valset), len(data.testset),
-    )
-    trainerloader = DataLoader(LoanDataset(data.trainset), batch_size=mc.batch_size, shuffle=True)
-    valloader = DataLoader(LoanDataset(data.valset), batch_size=mc.batch_size, shuffle=False)
-    testloader = DataLoader(LoanDataset(data.testset), batch_size=mc.batch_size, shuffle=False)
+    x_train, y_train = xy(data.trainset, target)
+    x_val, y_val = xy(data.valset, target)
 
-    logging.info("Model: input_dim=%d, hidden_layers=%s, dropout=%.2f", mc.model_input_dim, mc.hidden_layers, mc.dropout)
-    model = LoanPredictor(mc.model_input_dim, mc.hidden_layers, mc.dropout).to(device)
-    optimizer = Adam(model.parameters(), lr=mc.learning_rate, weight_decay=mc.weight_decay)
-    criterion = nn.BCEWithLogitsLoss()
+    logging.info("Fitting XGBClassifier (default hyperparameters)")
+    model = XGBClassifier()
+    model.fit(x_train, y_train)
 
-    logging.info("Starting MLflow run (experiment=%s, epochs=%d)", mlflow_config.experiment_name, mc.epoch)
+    val_probs = model.predict_proba(x_val)[:, 1]
+    metrics = score("xgboost", y_val, val_probs)
+    logging.info("xgboost — AUC=%.4f, F1=%.4f", metrics.auc, metrics.f1)
 
-    with mlflow.start_run(run_name="pytorch_nn") as run:
-        mlflow.enable_system_metrics_logging()
-        run_id = run.info.run_id
-        trained_model, loss_history, val_loss_history, test_loss_history, _ = train_model(
-            model, trainerloader, valloader, testloader,
-            optimizer, criterion, mc.epoch, device, mlflow,
-        )
-        _log_artifacts(data.scaler, data.encoders, loss_history, val_loss_history, test_loss_history)
-        version = _register_and_promote(trained_model, run_id, mlflow_config.model_name, mc.model_input_dim)
+    onnx_model = export_xgboost(model, n_features)
 
-    logging.info("PyTorch run complete (run_id=%s, model_version=%s)", run_id, version)
+    with mlflow.start_run(run_name="xgboost") as run:
+        mlflow.log_param("model_type", "xgboost")
+        _log_metrics(metrics)
+        _log_preprocessing_artifacts(data.scaler, data.encoders)
+        version = _register_and_promote(onnx_model, mlflow_config.model_name, n_features)
+
+    logging.info("XGBoost run complete (run_id=%s, model_version=%s)", run.info.run_id, version)
 
 
 def main() -> None:
     try:
-        logging.info("Using device: %s", device)
         data = load_and_prepare_data()
 
         repo_owner = os.getenv("DAGSHUB_REPO_OWNER", "pjawale")
@@ -127,7 +108,7 @@ def main() -> None:
         mlflow.set_experiment(data.config.mlflow.experiment_name)
         logging.info("DagsHub MLflow — repo=%s/%s", repo_owner, repo_name)
 
-        run_pytorch_training(data)
+        run_xgboost_training(data)
     except Exception as exc:
         logging.error("Training failed: %s", exc, exc_info=True)
         raise SystemExit(1) from exc
