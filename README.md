@@ -141,3 +141,51 @@ PYTHONPATH=. python notebooks/profile_dataset.py   # generates docs/train_profil
 ```bash
 locust -f tests/load_test.py --host http://localhost:8000
 ```
+
+---
+
+## Lambda Deployment
+
+The inference API can also run on AWS Lambda (alongside the EC2 deploy). Pushes to `main` trigger [`.github/workflows/deploy-lambda.yaml`](.github/workflows/deploy-lambda.yaml), which builds a container image and pushes it to **ECR Public** (50 GB/month free).
+
+**GitHub secrets** (in addition to existing AWS creds):
+
+| Secret | Example |
+|---|---|
+| `LAMBDA_FUNCTION_NAME` | `credit-risk-inference` |
+| `ECR_PUBLIC_REGISTRY` | `public.ecr.aws/abc123de` |
+| `ECR_PUBLIC_REPOSITORY` | `credit-risk-inference` |
+
+**One-time AWS setup:**
+
+```bash
+# Create public repo (ECR Public API is only in us-east-1)
+aws ecr-public create-repository \
+  --repository-name credit-risk-inference \
+  --region us-east-1
+
+# Create Lambda function (set env vars for DagsHub + ADMIN)
+aws lambda create-function \
+  --function-name credit-risk-inference \
+  --package-type Image \
+  --code ImageUri=public.ecr.aws/ALIAS/credit-risk-inference:lambda \
+  --role arn:aws:iam::ACCOUNT_ID:role/lambda-inference-role \
+  --timeout 60 \
+  --memory-size 2048 \
+  --environment "Variables={DAGSHUB_REPO_OWNER=pjawale,DAGSHUB_REPO_NAME=credit-scorer,DAGSHUB_USER_TOKEN=...,ADMIN=...}"
+
+# Expose via Function URL
+aws lambda create-function-url-config \
+  --function-name credit-risk-inference \
+  --auth-type NONE \
+  --cors '{"AllowOrigins":["*"],"AllowMethods":["*"],"AllowHeaders":["*"]}'
+
+aws lambda add-permission \
+  --function-name credit-risk-inference \
+  --statement-id FunctionURLAllowPublicAccess \
+  --action lambda:InvokeFunctionUrl \
+  --principal "*" \
+  --function-url-auth-type NONE
+```
+
+The Lambda image is public on ECR Public (no secrets are baked in). Expect a 15–40s cold start while the ONNX model loads from MLflow.
