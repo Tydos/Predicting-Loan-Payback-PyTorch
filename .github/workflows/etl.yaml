@@ -3,8 +3,8 @@ on:
   push:
     branches: [main]
     paths:
-      - "src/**"
-      - "src/config.yaml"
+      - "pipeline/**"
+      - "core/config.yaml"
       - ".github/workflows/etl.yaml"
   workflow_dispatch:
 jobs:
@@ -23,7 +23,9 @@ jobs:
 
       - name: Install dependencies
         run: |
-          pip install -r services/train/requirements.txt
+          pip install --upgrade pip
+          pip install torch --index-url https://download.pytorch.org/whl/cpu
+          pip install .
           pip install dvc
 
       - name: Configure DVC remote credentials
@@ -35,7 +37,7 @@ jobs:
         run: dvc pull dataset/accepted_2007_to_2018Q4.csv
 
       - name: Run ETL
-        run: python src/lending_club_etl.py
+        run: python pipeline/etl.py
 
       - name: Push outputs to DagHub
         run: dvc push dataset/train.csv

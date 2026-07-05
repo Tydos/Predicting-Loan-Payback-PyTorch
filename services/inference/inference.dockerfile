@@ -5,14 +5,14 @@ ENV PYTHONUNBUFFERED=1
 
 WORKDIR /app
 
-COPY services/inference/requirements.txt .
+COPY pyproject.toml README.md ./
+COPY core/ core/
 
 RUN pip install --no-cache-dir --upgrade pip && \
     pip install --no-cache-dir torch --index-url https://download.pytorch.org/whl/cpu && \
-    pip install --no-cache-dir -r requirements.txt
+    pip install --no-cache-dir .
 
 COPY services/inference/ .
-COPY core/ core/
 
 EXPOSE 8000
 

@@ -1,0 +1,56 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "credit-risk-scorer"
+version = "0.1.0"
+description = "Containerized MLOps pipeline for credit risk scoring with PyTorch training and FastAPI inference."
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "dagshub",
+    "fastapi",
+    "matplotlib",
+    "mlflow",
+    "numpy",
+    "pandas",
+    "psutil",
+    "pydantic",
+    "pyyaml",
+    "scikit-learn",
+    "tqdm",
+    "uvicorn[standard]",
+]
+
+[project.optional-dependencies]
+dev = [
+    "httpx>=0.27",
+    "pytest>=8.0",
+    "ruff>=0.8",
+]
+eda = [
+    "ipykernel",
+    "setuptools<81",
+    "ydata-profiling==4.18.4",
+]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["core*", "pipeline*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+python_files = ["test_*.py"]
+filterwarnings = [
+    "ignore:Using `httpx` with `starlette.testclient` is deprecated:DeprecationWarning",
+]
+
+[tool.ruff]
+target-version = "py311"
+line-length = 100
+src = ["core", "pipeline", "services", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP"]

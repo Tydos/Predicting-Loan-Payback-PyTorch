@@ -1,9 +1,0 @@
-pandas
-scikit-learn
-pyyaml
-pydantic
-matplotlib
-tqdm
-mlflow
-dagshub
-psutil
