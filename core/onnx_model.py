@@ -1,12 +1,17 @@
+from typing import TYPE_CHECKING
+
 import numpy as np
 import onnxruntime as ort
 from onnx import ModelProto
-from onnxmltools import convert_xgboost
-from onnxmltools.convert.common.data_types import FloatTensorType
-from xgboost import XGBClassifier
+
+if TYPE_CHECKING:
+    from xgboost import XGBClassifier
 
 
-def export_xgboost(model: XGBClassifier, n_features: int) -> ModelProto:
+def export_xgboost(model: "XGBClassifier", n_features: int) -> ModelProto:
+    from onnxmltools import convert_xgboost
+    from onnxmltools.convert.common.data_types import FloatTensorType
+
     initial_type = [("float_input", FloatTensorType([None, n_features]))]
     return convert_xgboost(model.get_booster(), initial_types=initial_type)
 

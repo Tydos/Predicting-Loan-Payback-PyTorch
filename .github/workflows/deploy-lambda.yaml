@@ -27,14 +27,14 @@ jobs:
 
     - name: Build & Push Lambda Image
       env:
-        IMAGE: ${{ secrets.ECR_PUBLIC_REGISTRY }}/${{ secrets.ECR_PUBLIC_REPOSITORY }}:lambda
+        IMAGE: ${{ secrets.ECR_PUBLIC_REGISTRY }}/${{ secrets.ECR_PUBLIC_REPOSITORY }}:latest
       run: |
         docker build -f services/inference/lambda.dockerfile -t "$IMAGE" .
         docker push "$IMAGE"
 
     - name: Update Lambda function
       env:
-        IMAGE: ${{ secrets.ECR_PUBLIC_REGISTRY }}/${{ secrets.ECR_PUBLIC_REPOSITORY }}:lambda
+        IMAGE: ${{ secrets.ECR_PUBLIC_REGISTRY }}/${{ secrets.ECR_PUBLIC_REPOSITORY }}:latest
       run: |
         aws lambda update-function-code \
           --function-name "${{ secrets.LAMBDA_FUNCTION_NAME }}" \

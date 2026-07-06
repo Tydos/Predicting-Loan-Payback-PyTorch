@@ -1,10 +1,10 @@
 FROM public.ecr.aws/lambda/python:3.11
 
-COPY pyproject.toml README.md ./
 COPY core/ core/
+COPY services/inference/requirements-lambda.txt .
 
 RUN pip install --no-cache-dir --upgrade pip && \
-    pip install --no-cache-dir . mangum
+    pip install --no-cache-dir --only-binary=:all: -r requirements-lambda.txt
 
 COPY services/inference/ .
 

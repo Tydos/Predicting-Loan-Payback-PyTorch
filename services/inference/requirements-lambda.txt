@@ -1,0 +1,11 @@
+dagshub
+fastapi
+mangum
+mlflow
+numpy<2.3
+onnx
+onnxruntime
+pandas
+pydantic
+pyyaml
+scikit-learn

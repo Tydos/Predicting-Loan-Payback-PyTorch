@@ -150,25 +150,31 @@ The inference API can also run on AWS Lambda (alongside the EC2 deploy). Pushes 
 
 **GitHub secrets** (in addition to existing AWS creds):
 
-| Secret | Example |
+| Secret | Value |
 |---|---|
-| `LAMBDA_FUNCTION_NAME` | `credit-risk-inference` |
-| `ECR_PUBLIC_REGISTRY` | `public.ecr.aws/abc123de` |
-| `ECR_PUBLIC_REPOSITORY` | `credit-risk-inference` |
+| `LAMBDA_FUNCTION_NAME` | your Lambda function name |
+| `ECR_PUBLIC_REGISTRY` | `public.ecr.aws/u9q6u2w1` |
+| `ECR_PUBLIC_REPOSITORY` | `credit-models` |
+
+**Manual push** (first time or without CI):
+
+```bash
+aws ecr-public get-login-password --region us-east-1 \
+  | docker login --username AWS --password-stdin public.ecr.aws
+
+docker build -f services/inference/lambda.dockerfile -t credit-models .
+docker tag credit-models:latest public.ecr.aws/u9q6u2w1/credit-models:latest
+docker push public.ecr.aws/u9q6u2w1/credit-models:latest
+```
 
 **One-time AWS setup:**
 
 ```bash
-# Create public repo (ECR Public API is only in us-east-1)
-aws ecr-public create-repository \
-  --repository-name credit-risk-inference \
-  --region us-east-1
-
 # Create Lambda function (set env vars for DagsHub + ADMIN)
 aws lambda create-function \
   --function-name credit-risk-inference \
   --package-type Image \
-  --code ImageUri=public.ecr.aws/ALIAS/credit-risk-inference:lambda \
+  --code ImageUri=public.ecr.aws/u9q6u2w1/credit-models:latest \
   --role arn:aws:iam::ACCOUNT_ID:role/lambda-inference-role \
   --timeout 60 \
   --memory-size 2048 \
