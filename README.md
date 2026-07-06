@@ -103,6 +103,72 @@ PYTHONPATH=. python notebooks/profile_dataset.py   # generates docs/train_profil
 ```bash
 locust -f tests/load_test.py --host http://localhost:8000
 ```
+---
+
+## EC2 Deployment
+
+The inference API can run on a persistent EC2 instance as a Docker container (uvicorn via [`services/inference/inference.dockerfile`](services/inference/inference.dockerfile)). Deployments are triggered manually through [`.github/workflows/deploy.yaml`](.github/workflows/deploy.yaml) (`workflow_dispatch` only — auto-deploy on push is disabled).
+
+The workflow builds the inference image, pushes it to private ECR, SSHes into the instance, pulls the image, and restarts the `loanpayback` container on port 80.
+
+**GitHub secrets:**
+
+| Secret | Example |
+|---|---|
+| `AWS_ACCESS_KEY_ID` | IAM access key for CI |
+| `AWS_SECRET_ACCESS_KEY` | IAM secret key |
+| `AWS_REGION` | `us-east-1` |
+| `ECR_REGISTRY` | `031749757344.dkr.ecr.us-east-1.amazonaws.com` |
+| `ECR_REPOSITORY` | `credit-models` |
+| `EC2_HOST` | Public IP or DNS of the instance |
+| `EC2_USER` | `ec2-user` (Amazon Linux) or `ubuntu` |
+| `EC2_SSH_KEY` | Private key contents for SSH |
+
+**One-time EC2 setup:**
+
+```bash
+# On the instance: install Docker + AWS CLI (Amazon Linux 2023 example)
+sudo dnf install -y docker awscli
+sudo systemctl enable --now docker
+sudo usermod -aG docker ec2-user
+
+# Create ECR repo (if not already created)
+aws ecr create-repository --repository-name credit-models
+
+# Security group: allow inbound TCP 80 (and 22 for SSH)
+```
+
+Store `DAGSHUB_USER_TOKEN` and `ADMIN` on the instance (e.g. in `~/.env`) — the container needs them at runtime to reach MLflow and protect `/reload`.
+
+**Manual deploy** (from repo root):
+
+```bash
+source .venv/bin/activate
+set -a && source .env && set +a
+
+aws ecr get-login-password --region us-east-1 \
+  | docker login --username AWS --password-stdin 031749757344.dkr.ecr.us-east-1.amazonaws.com
+
+docker build -f services/inference/inference.dockerfile -t credit-models .
+docker tag credit-models:latest \
+  031749757344.dkr.ecr.us-east-1.amazonaws.com/credit-models:latest
+docker push 031749757344.dkr.ecr.us-east-1.amazonaws.com/credit-models:latest
+
+# On EC2 (or via SSH)
+docker stop loanpayback || true && docker rm -f loanpayback || true
+docker pull 031749757344.dkr.ecr.us-east-1.amazonaws.com/credit-models:latest
+docker run -d \
+  -p 80:8000 \
+  --name loanpayback \
+  --env-file ~/.env \
+  031749757344.dkr.ecr.us-east-1.amazonaws.com/credit-models:latest
+```
+
+The API is then available at `http://<EC2_HOST>/`. Unlike Lambda, the container stays warm — no cold starts after the initial model load.
+
+> **Note:** EC2 and Lambda currently push to the same ECR tag (`credit-models:latest`) but use different Dockerfiles. Redeploying one overwrites the image the other expects — use separate tags (e.g. `:ec2` and `:lambda`) if running both in production.
+
+---
 
 ---
 
