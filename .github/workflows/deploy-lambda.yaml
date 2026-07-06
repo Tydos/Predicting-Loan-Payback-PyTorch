@@ -20,22 +20,25 @@ jobs:
         aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
         aws-region: ${{ secrets.AWS_REGION }}
 
-    - name: Login to Amazon ECR Public
+    - name: Login to Amazon ECR
       run: |
-        aws ecr-public get-login-password --region us-east-1 \
-          | docker login --username AWS --password-stdin public.ecr.aws
+        aws ecr get-login-password --region "$AWS_REGION" \
+          | docker login --username AWS --password-stdin "${{ secrets.ECR_REGISTRY }}"
 
     - name: Build & Push Lambda Image
       env:
-        IMAGE: ${{ secrets.ECR_PUBLIC_REGISTRY }}/${{ secrets.ECR_PUBLIC_REPOSITORY }}:lambda
+        IMAGE: ${{ secrets.ECR_REGISTRY }}/${{ secrets.ECR_REPOSITORY }}:latest
       run: |
-        docker build -f services/inference/lambda.dockerfile -t "$IMAGE" .
+        docker build --provenance=false --sbom=false \
+          -f services/inference/lambda.dockerfile -t "$IMAGE" .
         docker push "$IMAGE"
 
     - name: Update Lambda function
       env:
-        IMAGE: ${{ secrets.ECR_PUBLIC_REGISTRY }}/${{ secrets.ECR_PUBLIC_REPOSITORY }}:lambda
+        IMAGE: ${{ secrets.ECR_REGISTRY }}/${{ secrets.ECR_REPOSITORY }}:latest
       run: |
         aws lambda update-function-code \
           --function-name "${{ secrets.LAMBDA_FUNCTION_NAME }}" \
           --image-uri "$IMAGE"
+        aws lambda wait function-updated-v2 \
+          --function-name "${{ secrets.LAMBDA_FUNCTION_NAME }}"

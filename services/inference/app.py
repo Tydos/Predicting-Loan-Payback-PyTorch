@@ -1,8 +1,10 @@
 import asyncio
+import io
 import logging
 import os
 import pickle
 import secrets
+import sys
 import tempfile
 import time
 from contextlib import asynccontextmanager
@@ -41,6 +43,37 @@ def _load_model(client: MlflowClient, model_name: str):
         raise RuntimeError(f"Failed to load model '{model_name}': {e}") from e
 
 
+def _numpy2_pickle_compat() -> None:
+    """Register NumPy 2.x module aliases for unpickling on NumPy 1.x."""
+    import importlib
+
+    import numpy as np
+
+    if hasattr(np, "_core"):
+        return
+
+    core = importlib.import_module("numpy.core")
+    sys.modules.setdefault("numpy._core", core)
+    for sub in ("multiarray", "umath", "_multiarray_umath"):
+        try:
+            mod = importlib.import_module(f"numpy.core.{sub}")
+        except ModuleNotFoundError:
+            continue
+        sys.modules.setdefault(f"numpy._core.{sub}", mod)
+
+
+class _Numpy2CompatUnpickler(pickle.Unpickler):
+    def find_class(self, module: str, name: str):
+        if module.startswith("numpy._core"):
+            module = module.replace("numpy._core", "numpy.core", 1)
+        return super().find_class(module, name)
+
+
+def _pickle_loads(data: bytes):
+    _numpy2_pickle_compat()
+    return _Numpy2CompatUnpickler(io.BytesIO(data)).load()
+
+
 def _load_preprocessing(client: MlflowClient, model_name: str, version: int):
     """Loads the scaler and encoders that the champion model was trained with."""
     try:
@@ -58,8 +91,8 @@ def _load_preprocessing(client: MlflowClient, model_name: str, version: int):
             logging.warning("Preprocessing artifacts not found: %s", exc)
             return None, None
 
-        scaler = pickle.loads((tmp_path / "scaler.pkl").read_bytes())
-        encoders = pickle.loads((tmp_path / "encoders.pkl").read_bytes())
+        scaler = _pickle_loads((tmp_path / "scaler.pkl").read_bytes())
+        encoders = _pickle_loads((tmp_path / "encoders.pkl").read_bytes())
 
     logging.info("Loaded preprocessing artifacts from run %s", run_id)
     return scaler, encoders
