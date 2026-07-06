@@ -1,0 +1,6 @@
+dagshub
+fastapi
+mangum
+mlflow-skinny
+pydantic
+pyyaml
