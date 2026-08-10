@@ -18,6 +18,7 @@ import mlflow.onnx
 import numpy as np
 from core.metrics import score, xy
 from core.onnx_model import create_session, export_xgboost, predict_proba
+from mlflow.exceptions import MlflowException
 from pipeline.prepare import PreparedData, load_and_prepare_data
 from xgboost import XGBClassifier
 
@@ -44,7 +45,16 @@ def _log_metrics(result) -> None:
     mlflow.log_metric("val_recall", result.recall)
 
 
-def _register_and_promote(onnx_model, model_name: str, n_features: int) -> int:
+def _get_champion_val_auc(client: mlflow.MlflowClient, model_name: str) -> float | None:
+    """Returns the current champion's val_auc, or None if there is no champion yet."""
+    try:
+        mv = client.get_model_version_by_alias(model_name, "champion")
+    except MlflowException:
+        return None
+    return client.get_run(mv.run_id).data.metrics.get("val_auc")
+
+
+def _register_and_promote(onnx_model, model_name: str, n_features: int, val_auc: float) -> int:
     logging.info("Logging ONNX model artifact")
     model_info = mlflow.onnx.log_model(
         onnx_model,
@@ -62,11 +72,26 @@ def _register_and_promote(onnx_model, model_name: str, n_features: int) -> int:
     session = create_session(loaded)
     prob = predict_proba(session, [0.0] * n_features)
 
-    if math.isfinite(prob):
-        client.set_registered_model_alias(model_name, "champion", str(version))
-        logging.info("Model version %s aliased as 'champion'", version)
-    else:
+    if not math.isfinite(prob):
         logging.warning("Sanity check failed — model version %s not aliased", version)
+        return version
+
+    champion_auc = _get_champion_val_auc(client, model_name)
+    if champion_auc is None or val_auc >= champion_auc:
+        client.set_registered_model_alias(model_name, "champion", str(version))
+        logging.info(
+            "Model version %s aliased as 'champion' (val_auc=%.4f, previous champion=%s)",
+            version,
+            val_auc,
+            f"{champion_auc:.4f}" if champion_auc is not None else "none",
+        )
+    else:
+        logging.info(
+            "Model version %s not promoted — val_auc=%.4f does not beat current champion's %.4f",
+            version,
+            val_auc,
+            champion_auc,
+        )
 
     return version
 
@@ -93,7 +118,9 @@ def run_xgboost_training(data: PreparedData) -> None:
         mlflow.log_param("model_type", "xgboost")
         _log_metrics(metrics)
         _log_preprocessing_artifacts(data.scaler, data.encoders)
-        version = _register_and_promote(onnx_model, mlflow_config.model_name, n_features)
+        version = _register_and_promote(
+            onnx_model, mlflow_config.model_name, n_features, metrics.auc
+        )
 
     logging.info("XGBoost run complete (run_id=%s, model_version=%s)", run.info.run_id, version)
 

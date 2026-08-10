@@ -17,7 +17,7 @@ in every row). After filtering those out, the goal was to keep only features tha
 
 That left 10 features for the prototype:
 
-![Prototype Features](docs/prototype_features.png)
+![Prototype Features](prototype_features.png)
 
 | # | Feature | What it captures |
 |---|---|---|

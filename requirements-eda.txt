@@ -1,0 +1,3 @@
+ipykernel
+setuptools<81
+ydata-profiling==4.18.4
